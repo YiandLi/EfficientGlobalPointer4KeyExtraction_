@@ -18,7 +18,7 @@ python==3.7
 torch==1.8.1
 transformers==4.10.0
 ```
-服务器所有依赖参考`requirements.txt`。
+服务器所有依赖参考`server_requirements.txt`，千万不要让pycharm默认全部安装。
 
 # 文件
 ```
@@ -26,7 +26,7 @@ EfficientGlobalPointer4KeyExtraction
 ├── ensemble.sh  # 模型融合脚本
 ├── GP_runner.sh  # finetune脚本
 ├── README.md
-├── requirements.txt  # 服务器依赖
+├── server_requirements.txt  # 服务器依赖
 ├── result.txt  # 预测结果
 ├── err.log
 ├── checkpoints  # 模型保存地址
@@ -164,4 +164,10 @@ EfficientGlobalPointer4KeyExtraction
 参考 w2v_emb
 
 
+## 数据增强：keyword替换
+1. 下载或构建关键词列表，这里使用 THU-caijing 语料，放在`datasets/split_data/features/dic/thu_caijing_dic.json` 中。
+2. 运行 `enhancement/replace.py` ，得到增强样本 `datasets/split_data/enhanced_train.json` 。
 
+## 模型融合
+`ensemble.sh` 脚本中的 `checkpoints` 指定 checkpoint 列表，空格隔开。
+每次训练后会在checkpoints中得到`ths_model.pth`模型参数文件和`args.json`args文件，可以手动将这两个文件剪贴到一个模型文件夹中，融合时，传入文件夹名称即可。

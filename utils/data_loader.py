@@ -5,6 +5,8 @@
 @Description: CMeEE实体识别的数据载入器
 """
 import json
+from typing import Tuple
+
 import torch
 from torch.utils.data import Dataset
 import numpy as np
@@ -102,7 +104,7 @@ class EntDataset(Dataset):
     
                    注意前后有 (0,0) := [cls],[sep]，token2char_span_mapping长度和token_type_ids/attention_mask长度相同
                    所以特征向量开头和结束要填充 0
-                   其余部位，如果token2char_span_mapping中元组两个元素位置都对应dic_feature（在字典中）为1，则填充subtoken为1；有一个1则填充0；没有则填充0
+                   其余部位，如果token2char_span_mapping中元两组个元素位置都对应dic_feature（在字典中）为1，则填充subtoken为1；有一个1则填充0；没有则填充0
                """
                 dic_feature = item["dic_features"]
                 dic_embs = []
@@ -128,7 +130,7 @@ class EntDataset(Dataset):
                         out_w2v_feature.append(torch.tensor([float(0) for i in range(w2v_emb)]))
                     elif e_idx - s_idx == 1:  # 逐字切分
                         out_w2v_feature.append(torch.tensor(in_w2v_feature[s_idx]))
-                    else:  # 这里如果切成 "QS13"（一个token），使用 max pooling，得到token
+                    else:  # 这里如果切成 "SQ13"（一个token），使用 max pooling，得到token
                         word_pooling = [in_w2v_feature[single_one] for single_one in range(s_idx, e_idx)]
                         word_pooling = torch.tensor(word_pooling)
                         word_pooling = torch.amax(word_pooling, 0)
@@ -166,7 +168,8 @@ class EntDataset(Dataset):
         seq_dims : 控制维度
         """
         if length is None:
-            length = np.max([np.shape(x)[:seq_dims] for x in inputs], axis=0)
+            length = np.max([np.shape(x)[:seq_dims] for x in inputs],
+                            axis=0)  # label_num, max_seq_len, max_seq_len，注意这里 max_seq_len 是同batch内最长句子的长度
         elif not hasattr(length, '__getitem__'):
             length = [length]
         
@@ -184,10 +187,55 @@ class EntDataset(Dataset):
                     pad_width[i] = (length[i] - np.shape(x)[i], 0)
                 else:
                     raise ValueError('"mode" argument must be "post" or "pre".')
+            
+            # pad_width是在各维度的各个方向上想要填补的长度,如（（1，2），（2，2））
+            # 表示在第一个维度上水平方向上padding=1,垂直方向上padding=2
+            # 在第二个维度上水平方向上padding=2,垂直方向上padding=2。
+            # 如果直接输入一个整数，则说明各个维度和各个方向所填补的长度都一样。
             x = np.pad(x, pad_width, 'constant', constant_values=value)
             outputs.append(x)
         
         return np.array(outputs)
+    
+    def get_boundary_smoothing(self, start, end, label, labels, real_length, allow_single_token=True):
+        """
+        labels:  entity_num, max_len, max_len 注意本代码中本参数是截断过的
+        real_length: 真实的样本长度
+        allow_single:  默认单个token不算作entity
+        
+        采用累加的方式 ，逐个 golden entity 遍历
+        """
+        
+        def _spans_from_surrounding(span: Tuple[int], distance: int, num_tokens: int, allow_single_token: bool):
+            """Spans from the surrounding area of the given `span`.
+            """
+            for k in range(distance):
+                for start_offset, end_offset in [(-k, -distance + k),
+                                                 (-distance + k, k),
+                                                 (k, distance - k),
+                                                 (distance - k, -k)]:
+                    start, end = span[0] + start_offset, span[1] + end_offset
+                    # 源码为  0<=start < end <= num_tokens 但是个人 觉得 cls 和 sep 不应该被计算在内，一定不是实体
+                    # num_token = seq_len  + 2 (cls+sep)
+                    # 0    1      2      3
+                    # [cls token1 token2 sep]    长度为4 但是实际上索引应该小于3(sep)，所以是 end < num_tokens-1
+                    if allow_single_token and 0 < start <= end < num_tokens - 1:
+                        yield (start, end)
+                    elif 0 < start < end < num_tokens - 1:
+                        yield (start, end)
+        
+        labels[label, start, end] += (1 - self.args.sb_epsilon)
+        for dist in range(1, self.args.sb_size + 1):  # 遍历距离
+            eps_per_span = self.args.sb_epsilon / (self.args.sb_size * dist * 4)
+            sur_spans = list(
+                _spans_from_surrounding((start, end), dist, real_length, self.args.allow_single_token))  # 找到所有曼哈顿距离为dist的「周围span」的坐标
+            for sur_start, sur_end in sur_spans:
+                labels[label, sur_start, sur_end] += (
+                        eps_per_span * self.args.sb_adj_factor
+                )
+            labels[label, start, end] += eps_per_span * (dist * 4 - len(sur_spans))
+        
+        return labels
     
     def collate(self, examples):
         raw_text_list, batch_input_ids, batch_attention_mask, batch_labels, batch_segment_ids = [], [], [], [], []
@@ -197,19 +245,22 @@ class EntDataset(Dataset):
             raw_text, start_mapping, end_mapping, input_ids, token_type_ids, attention_mask, feature_embs \
                 = self.encoder(item)
             # 得到目标概率矩阵
-            labels = np.zeros((len(ent2id), max_len, max_len))
-            labels_binary = np.zeros((2, max_len, max_len))
-            for start, end, label in item["entities"]:
+            labels = np.zeros((len(ent2id), max_len, max_len))  #
+            # labels_binary = np.zeros((2, max_len, max_len))  # 只考虑是否为 entity
+            for start, end, label in item["entities"]:  # 全都是index索引，label不用额外转换
                 if start in start_mapping and end in end_mapping:
                     # 得到概率矩阵中的 横竖索引
                     # 其实就是span 的 start_idx 和 end_idx 控制的位置
                     start = start_mapping[start]
                     end = end_mapping[end]
-                    labels[label, start, end] = 1  # [label_num, seq_len, seq_len]
-                    
-                    for end_ in range(start, end):
-                        labels_binary[1, start, end_] = 1
-                    labels_binary[1, start, end] = 1
+                    if not self.args.do_boundary_smoothing:
+                        labels[label, start, end] = 1  # [label_num, seq_len, seq_len]
+                    else:
+                        labels = self.get_boundary_smoothing(start, end, label, labels, len(input_ids))
+                
+                # for end_ in range(start, end):
+                #     labels_binary[1, start, end_] = 1
+                # labels_binary[1, start, end] = 1
             
             raw_text_list.append(raw_text)
             batch_input_ids.append(input_ids)
@@ -222,7 +273,10 @@ class EntDataset(Dataset):
         batch_inputids = torch.tensor(self.sequence_padding(batch_input_ids)).long()
         batch_segmentids = torch.tensor(self.sequence_padding(batch_segment_ids)).long()
         batch_attentionmask = torch.tensor(self.sequence_padding(batch_attention_mask)).float()
-        batch_labels = torch.tensor(self.sequence_padding(batch_labels, seq_dims=3)).long()
+        # batch_labels = torch.tensor(self.sequence_padding(batch_labels, seq_dims=3)).long()
+        batch_labels = torch.tensor(self.sequence_padding(batch_labels, seq_dims=3))
+        # 这里出现 bug，即long()，让所有数值（0.8, 0.1）全部变换为0，同时boundary并不适用于circle loss
+        
         
         # feature
         batch_handfeatures = torch.tensor(self.sequence_padding(batch_hand_features, seq_dims=2)).float()

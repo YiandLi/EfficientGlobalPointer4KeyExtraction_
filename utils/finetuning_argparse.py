@@ -44,7 +44,7 @@ def get_argparse():
     parser.add_argument("--do_predict", action="store_true",
                         help="Whether to run predictions on the dev set.")
     
-    # 新增 trick
+    # 比赛新增 trick
     parser.add_argument("--features", default="", type=str,
                         help="in_dic: whether the word is in dictionary, if yes set 1, else 0"
                              "w2v_emb: whether to concat corresponding word w2v embedding"
@@ -61,4 +61,17 @@ def get_argparse():
                         help="The epsilon of fgm")
     parser.add_argument("--do_swa", action="store_true",
                         help="Whether to use swa to average parameters.")
+    
+    # boundary smoothing: Boundary Smoothing for Named Entity Recognition
+    parser.add_argument("--do_boundary_smoothing", action="store_true",
+                        help="Whether to do boundary_smoothing.")
+    parser.add_argument("--allow_single_token", action="store_true",
+                        help="When boundary_smoothing, whether to let single token as one soft entity")
+    parser.add_argument("--sb_epsilon", default=0.2, type=float,
+                        help="The smoothing parameter, in source code is {.1, .2, .3}")
+    parser.add_argument("--sb_size", default=1, type=int,
+                        help="The smoothing parameter,  in source code is {1, 2}")
+    parser.add_argument("--sb_adj_factor", default=0.2, type=float,
+                        help="Dot smoothing probability, in source code is 1.0 ")
+    
     return parser

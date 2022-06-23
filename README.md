@@ -4,6 +4,10 @@
 基于 GlobalPointer 的改进，[Keras 版本](https://spaces.ac.cn/archives/8877) 的 torch 复现，核心还是 token-pair 。
 绝大部分代码源自作者之前关于 GlobalPointer 的 [repository](https://github.com/xhw205/GlobalPointer_torch)。
 
+# 更新记录
+- 2022/04/23 创建
+- 2022/6/23 增加 boundary smoothing 功能
+
 # 依赖
 本地测试时，使用CPU环境，mlm以外均能跑通，依赖为
 ```
@@ -104,6 +108,7 @@ EfficientGlobalPointer4KeyExtraction
 8. 数据增强：keyword 替换
 9. 模型融合
 10. SWA
+11. Boundary Smoothing
 
 # 运行
 ## 数据集格式
@@ -167,6 +172,13 @@ EfficientGlobalPointer4KeyExtraction
 ## 数据增强：keyword替换
 1. 下载或构建关键词列表，这里使用 THU-caijing 语料，放在`datasets/split_data/features/dic/thu_caijing_dic.json` 中。
 2. 运行 `enhancement/replace.py` ，得到增强样本 `datasets/split_data/enhanced_train.json` 。
+
+## Boundary Smoothing
+1. `dataloader.py` 中加入 `self.get_boundary_smoothing()` 得到新的 soft label，和源码相比，做出如下改动：
+    1. 针对本项目修改维度顺序。
+    2. `[cls]` 和 `[sep]` 不能在 soft label 内
+    3. 允许 `start index == end index`，即允许单个 token 作为实体
+2. `train_CMR.py` 中 `multilabel_categorical_crossentropy()` 调整计算损失的逻辑。
 
 ## 模型融合
 `ensemble.sh` 脚本中的 `checkpoints` 指定 checkpoint 列表，空格隔开。

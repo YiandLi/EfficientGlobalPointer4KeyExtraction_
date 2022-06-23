@@ -175,7 +175,7 @@ EfficientGlobalPointer4KeyExtraction
 
 ## Boundary Smoothing
 1. `dataloader.py` 中加入 `self.get_boundary_smoothing()` 得到新的 soft label，和源码相比，做出如下改动：
-    1. 针对本项目修改维度顺序。
+    1. 针对本项目修改维度顺序
     2. `[cls]` 和 `[sep]` 不能在 soft label 内
     3. 允许 `start index == end index`，即允许单个 token 作为实体
 2. `train_CMR.py` 中 `multilabel_categorical_crossentropy()` 调整计算损失的逻辑。

@@ -4,6 +4,7 @@
 @Description: 实体抽取.
 """
 import json
+import os
 import random
 import sys
 import warnings
@@ -35,18 +36,13 @@ def set_seed(seed: int):
     random.seed(seed)
     numpy.random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
     if torch.cuda.device_count() > 0:
         torch.cuda.manual_seed_all(seed)
 
 
-set_seed(42)
+set_seed(421)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-"""
-# 使用 Huggingface transformers 加载：https://github.com/Langboat/Mengzi
-tokenizer = BertTokenizer.from_pretrained("Langboat/mengzi-bert-base")
-model = BertModel.from_pretrained("Langboat/mengzi-bert-base")
-"""
 
 # tokenizer
 # BertTokenizerFast:
@@ -57,6 +53,7 @@ if args.do_enhance:
     train_eamples = read_example_form_file(args, 'enhanced_train')
 else:
     train_eamples = read_example_form_file(args, 'train')
+
 ner_train = EntDataset(args, train_eamples, tokenizer=tokenizer)
 ner_loader_train = DataLoader(ner_train, batch_size=args.batch_size, collate_fn=ner_train.collate, shuffle=True,
                               num_workers=16 if device == 'cuda' else 0
@@ -68,6 +65,11 @@ ner_loader_evl = DataLoader(ner_evl, batch_size=args.batch_size, collate_fn=ner_
                             )
 
 # GP MODEL
+"""
+encoder 使用 Huggingface transformers 加载：https://github.com/Langboat/Mengzi
+tokenizer = BertTokenizer.from_pretrained("Langboat/mengzi-bert-base")
+model = BertModel.from_pretrained("Langboat/mengzi-bert-base")
+"""
 encoder = BertModel.from_pretrained(args.bert_model_path)
 logger.info("total_feature_size = {}\n".format(args.total_feature_size))
 model = EffiGlobalPointer(encoder, ent_type_size=args.ent_cls_num, inner_dim=args.inner_dim,
@@ -89,15 +91,17 @@ def set_optimizer(model, train_steps=None):
     #                      warmup=0.1,
     #                      t_total=train_steps)
     
-    # encoder 的参数
+    # encoder 的 named_parameters()
     encoder_param_optimizer = list(model.encoder.named_parameters())
-    encoder_param_optimizer = [n for n in encoder_param_optimizer if 'pooler' not in n[0]]
     
-    # classifier/dense 的参数
+    # classifier/dense 的 named_parameters()
     dense_para_optimizer = list(model.dense_1.named_parameters())
     dense_para_optimizer.extend(list(model.dense_2.named_parameters()))
     if args.use_lstm:
         dense_para_optimizer.extend(list(model.lstm.named_parameters()))
+    
+    # 筛选 pooler
+    encoder_param_optimizer = [n for n in encoder_param_optimizer if 'pooler' not in n[0]]
     dense_para_optimizer = [n for n in dense_para_optimizer if 'pooler' not in n[0]]
     
     no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
@@ -142,6 +146,30 @@ def multilabel_categorical_crossentropy(y_pred, y_true):
     """
     y_pred: (batch_size * ent_type_size, seq_len * seq_len)
     y_true: (batch_size * ent_type_size, seq_len * seq_len)
+    
+    两种方式引入  boundary smoothing，exp前或者exp后，这里使用前者，因为后面再加exp，仍然满足概率计算的方式
+    """
+    y_true_mask = (y_true > 0).long()
+    y_pred = (1 - 2 * y_true_mask) * y_pred  # -1 -> pos classes, 1 -> neg classes
+    y_pred_neg = y_pred - y_true_mask * 1e12  # mask the pred outputs of pos classes
+    y_pred_pos = y_pred - (1 - y_true_mask) * 1e12  # mask the pred outputs of neg classes
+    zeros = torch.zeros_like(y_pred[..., :1])  # (batch_size * ent_type_size, 1)
+    
+    # 增加 boundary smoothing 部分
+    y_pred_pos = y_pred_pos * y_true
+    y_pred_pos[y_pred_pos == 0] = -1e12
+    # 都加1列 0 ，exp(0)=1 表示 1
+    y_pred_neg = torch.cat([y_pred_neg, zeros], dim=-1)
+    y_pred_pos = torch.cat([y_pred_pos, zeros], dim=-1)
+    neg_loss = torch.logsumexp(y_pred_neg, dim=-1)
+    pos_loss = torch.logsumexp(y_pred_pos, dim=-1)
+    return (neg_loss + pos_loss).mean()
+
+
+def og_multilabel_categorical_crossentropy(y_pred, y_true):
+    """
+    y_pred: (batch_size * ent_type_size, seq_len * seq_len)
+    y_true: (batch_size * ent_type_size, seq_len * seq_len)
     """
     y_pred = (1 - 2 * y_true) * y_pred  # -1 -> pos classes, 1 -> neg classes
     y_pred_neg = y_pred - y_true * 1e12  # mask the pred outputs of pos classes
@@ -169,7 +197,8 @@ def loss_fun(y_pred, y_true):
 
 def r_drop_loss(logits_1, logits_2, y_true, alpha):
     loss_circle = loss_fun(logits_1, y_true) + loss_fun(logits_2, y_true)
-    
+    # print(torch.sum(logits_1-logits_2))
+    # exit()
     batch_size, ent_type_size = logits_1.shape[:2]
     logits_2 = logits_2.reshape(batch_size * ent_type_size, -1)
     logits_1 = logits_1.reshape(batch_size * ent_type_size, -1)
@@ -221,11 +250,11 @@ if args.do_train:
             # r-dropout 和 ce 对应
             if args.do_rdrop:
                 logits = model(input_ids, attention_mask, segment_ids, hand_features)
-                set_seed(52)
+                set_seed(122)  # 这个地方怎么不管用了 我去！！！
                 # [ batch, class_num, seq_len, seq_len ]
-                logits_1 = model(input_ids, attention_mask, segment_ids, hand_features)
+                logits_rd = model(input_ids, attention_mask, segment_ids, hand_features)
                 set_seed(42)
-                loss = r_drop_loss(logits, logits_1, labels, args.rdrop_alpha)
+                loss = r_drop_loss(logits, logits_rd, labels, args.rdrop_alpha)
             else:
                 logits = model(input_ids, attention_mask, segment_ids, hand_features)
                 loss = loss_fun(logits, labels)
@@ -254,7 +283,7 @@ if args.do_train:
             avg_f1 = total_f1 / (idx + 1)
             
             if args.do_swa:
-                optimizer.swap_swa_sgd()
+                optimizer.swap_swa_sgd()  # 重置权重
             
             if idx % 10 == 0:
                 logger.info("trian_loss:%f\t train_f1:%f" % (avg_loss, avg_f1))

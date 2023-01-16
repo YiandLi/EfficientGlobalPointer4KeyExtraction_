@@ -169,5 +169,4 @@ Refer to w2v_emb
 2. `train_CMR.py` - `multilabel_categorical_crossentropy()` Adjust the logic of calculating loss.
 
 ## Model ensembling
-`ensemble.sh` 脚本中的 `checkpoints` 指定 checkpoint 列表，空格隔开。
-每次训练后会在checkpoints中得到`ths_model.pth`模型参数文件和`args.json`args文件，可以手动将这两个文件剪贴到一个模型文件夹中，融合时，传入文件夹名称即可。
+The `checkpoints` in the script, which is separated by spaces, specifies the checkpoint list.

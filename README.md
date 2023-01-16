@@ -6,7 +6,7 @@
 # 模型源码
 原模型地址：https://github.com/xhw205/Efficient-GlobalPointer-torch
 
-基于 GlobalPointer 的改进，[Keras 版本](https://spaces.ac.cn/archives/8877) 的 torch 复现，核心还是 token-pair 。
+基于 GlobalPointer 的改进，[Keras 版本](https://spaces.ac.cn/archives/8877) 的 torch 复现，核心还是 token-pair 。\
 绝大部分代码源自作者之前关于 GlobalPointer 的 [repository](https://github.com/xhw205/GlobalPointer_torch)。
 
 # 更新记录
@@ -143,8 +143,8 @@ EfficientGlobalPointer4KeyExtraction
 2. 开始训练，参数或脚本参考 `GP_runner.sh`，微调部分参数参考 `finetuning_argparse.py`。 
 
 ## 人工特征
-`in_dic`: 共现特征，如果 `labeled keyword` 在输入文本中，则下标设置为 1。
-`w2v_emb`: 将`word_emb`拼接到`token_emb`。
+`in_dic`: 共现特征，如果 `labeled keyword` 在输入文本中，则下标设置为 1。\
+`w2v_emb`: 将`word_emb`拼接到`token_emb`。\
 `flag_id`: 加入词性 one-hot 特征。
 
 ### in_dic
@@ -186,5 +186,5 @@ EfficientGlobalPointer4KeyExtraction
 2. `train_CMR.py` 中 `multilabel_categorical_crossentropy()` 调整计算损失的逻辑。
 
 ## 模型融合
-`ensemble.sh` 脚本中的 `checkpoints` 指定 checkpoint 列表，空格隔开。
+`ensemble.sh` 脚本中的 `checkpoints` 指定 checkpoint 列表，空格隔开。\
 每次训练后会在checkpoints中得到`ths_model.pth`模型参数文件和`args.json`args文件，可以手动将这两个文件剪贴到一个模型文件夹中，融合时，传入文件夹名称即可。

@@ -1,7 +1,7 @@
 # Coding
 Original Model path：https://github.com/xhw205/Efficient-GlobalPointer-torch
 
-Based on GlobalPointer，[Keras version](https://spaces.ac.cn/archives/8877) 的 torch 复现，核心还是 token-pair 。
+Based on GlobalPointer，[Keras version](https://spaces.ac.cn/archives/8877) ，The solution key is to represent token-pair 。\
 The base model is from a  torch version [repository](https://github.com/xhw205/GlobalPointer_torch)。
 
 # Updating records
@@ -137,8 +137,8 @@ EfficientGlobalPointer4KeyExtraction
 2. To start training, refer to `GP_runner.sh` for parameters or scripts, and `finetuning_argparse.py` for fine-tuning some parameters.
 
 ## artificial features
-`in_dic`: Co-occurrence features, subscript set to 1 if `labeled keyword` is in the input text.
-`w2v_emb`: Splice `word_emb` to `token_emb`.
+`in_dic`: Co-occurrence features, subscript set to 1 if `labeled keyword` is in the input text.\
+`w2v_emb`: Splice `word_emb` to `token_emb`.\
 `flag_id`: Add part-of-speech one-hot features.
 
 ### in_dic

@@ -1,3 +1,6 @@
+English Version READDME: [README_English.md](./README_English.md)
+
+
 # 模型源码
 原模型地址：https://github.com/xhw205/Efficient-GlobalPointer-torch
 
